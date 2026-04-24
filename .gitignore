@@ -1,0 +1,29 @@
+node_modules/
+dist/
+
+# Local environment and editor state
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs and test/build byproducts
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+coverage/
+.nyc_output/
+*.tsbuildinfo
+_site/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# User exports from the app
+private-diary-encrypted-backup-*.json

@@ -1,0 +1,43 @@
+﻿const state: AppState = {
+  db: null,
+  vault: null,
+  key: null,
+  entries: new Map<string, DiaryEntry>(),
+  records: new Map<string, EntryRecord>(),
+  currentDate: todayLocal(),
+  promptShift: 0,
+  lockTimer: undefined,
+  hiddenAt: 0,
+  activityThrottleAt: 0,
+  busy: false,
+  autoSaveTimer: undefined,
+  savePromise: null,
+  saveQueued: false,
+  lastSavedFingerprint: "",
+  unlockedSession: 0,
+  activeTab: "write",
+  browseDate: "",
+  browseYearFilter: "",
+  uiTheme: "sage",
+  uiFont: "system",
+  uiMaxWidth: 1200,
+  remoteRequestsInFlight: 0,
+  llmScope: "30",
+  llmSettings: {
+    apiKey: "",
+    model: OPENROUTER_DEFAULT_MODEL,
+    responseLanguage: LLM_DEFAULT_RESPONSE_LANGUAGE,
+    prompts: { ...DEFAULT_LLM_PROMPTS }
+  },
+  llmPricing: null,
+  llmCredits: null,
+  llmEntryCapsules: new Map<string, LlmEntryCapsule>(),
+  llmYearSummaries: new Map<string, LlmYearSummary>(),
+  llmRunLogs: new Map<string, LlmRunLog>(),
+  llmCacheBrowserOpen: false,
+  llmBusyAction: "",
+  llmLastRun: null,
+  llmEntryAdviceRuns: new Map<string, LlmEntryAdviceRunResult>()
+};
+
+let els: AppElements;

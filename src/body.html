@@ -1,0 +1,387 @@
+<div id="app">
+  <section id="lockedView" class="lock-shell">
+    <div class="lock-panel" aria-labelledby="lockTitle">
+      <div class="brand-row">
+        <div class="brand">
+          <strong>Private Diary</strong>
+          <small>Local encrypted journal</small>
+        </div>
+        <small id="vaultState" class="subtle">Checking vault</small>
+      </div>
+
+      <h1 id="lockTitle">Unlock your diary</h1>
+      <p class="warning">
+        There is no password recovery. If you forget the master password, the diary and encrypted backups cannot be decrypted.
+      </p>
+
+      <form id="authForm" class="auth-form" autocomplete="off">
+        <label>
+          <span>Master password</span>
+          <input id="passwordInput" type="password" autocomplete="current-password" minlength="10" required>
+        </label>
+        <label id="confirmPasswordWrap" class="hidden">
+          <span>Repeat master password</span>
+          <input id="confirmPasswordInput" type="password" autocomplete="new-password" minlength="10">
+        </label>
+        <div class="actions">
+          <button id="authButton" class="primary" type="submit">Unlock</button>
+          <button id="lockedImportButton" type="button">Import encrypted diary backup</button>
+        </div>
+        <p id="authStatus" class="status" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </section>
+
+  <section id="unlockedView" hidden>
+    <div class="topbar">
+      <nav class="tabbar" role="tablist" aria-label="Diary sections">
+        <button id="writeTab" class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="writePanel" data-tab-button data-tab="write">Entry</button>
+        <button id="browseTab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="browsePanel" data-tab-button data-tab="browse">Browse</button>
+        <button id="insightsTab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="insightsPanel" data-tab-button data-tab="insights">Insights</button>
+        <button id="backupTab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="backupPanel" data-tab-button data-tab="backup">Settings</button>
+      </nav>
+      <div id="remoteActivity" class="remote-activity" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+    </div>
+
+    <main class="workspace">
+      <section id="writePanel" class="tab-panel journal" role="tabpanel" aria-labelledby="writeTab" data-tab-panel="write">
+        <form id="entryForm" class="entry-form" autocomplete="off">
+          <div class="section">
+            <div class="section-head">
+              <h2>Daily Entry</h2>
+              <span id="entrySavedState" class="subtle">Not saved yet</span>
+            </div>
+            <div class="entry-top">
+              <label class="date-field">
+                <span>Date</span>
+                <input id="entryDate" type="date" required>
+              </label>
+              <div class="mood-field">
+                <span class="field-label">Mood</span>
+                <select id="moodSelect" class="hidden" tabindex="-1" aria-hidden="true">
+                  <option value="">Choose a mood</option>
+                </select>
+                <div id="moodPills" class="mood-pills" role="radiogroup" aria-label="Mood"></div>
+              </div>
+            </div>
+            <div class="metrics compact-metrics">
+              <div class="metric-field">
+                <div class="metric-head">
+                  <span>Energy</span>
+                  <span id="energyValue" class="slider-value">5</span>
+                </div>
+                <input id="energyInput" class="hidden" type="number" min="1" max="10" step="1" value="5">
+                <div id="energyScale" class="metric-scale" role="radiogroup" aria-label="Energy"></div>
+              </div>
+              <div class="metric-field">
+                <div class="metric-head">
+                  <span>Stress</span>
+                  <span id="stressValue" class="slider-value">5</span>
+                </div>
+                <input id="stressInput" class="hidden" type="number" min="1" max="10" step="1" value="5">
+                <div id="stressScale" class="metric-scale" role="radiogroup" aria-label="Stress"></div>
+              </div>
+            </div>
+            <label>
+              <span>Journal</span>
+              <textarea id="journalText" placeholder="What happened, what did it mean, and what is still unresolved?"></textarea>
+            </label>
+            <label>
+              <span>Themes or tags</span>
+              <input id="themesInput" type="text" placeholder="work, marriage, fatherhood, health">
+            </label>
+          </div>
+
+          <div class="section">
+            <div class="section-head">
+              <h2>Standing Topics</h2>
+              <span id="topicCount" class="subtle">0 tracked</span>
+            </div>
+            <div class="topic-add">
+              <label>
+                <span>New topic</span>
+                <input id="topicTitleInput" type="text" maxlength="80" placeholder="a few words">
+              </label>
+              <button id="addTopicButton" type="button">Add topic</button>
+            </div>
+            <div id="topicList" class="topic-list"></div>
+          </div>
+
+          <div class="section">
+            <div class="section-head">
+              <h2>Reflection</h2>
+              <button id="rotatePromptsButton" class="text" type="button">Rotate prompts</button>
+            </div>
+            <div id="promptList" class="prompt-list"></div>
+          </div>
+
+          <div class="section">
+            <div class="section-head">
+              <h2>Weekly Review</h2>
+              <span id="weekRange" class="subtle">This week</span>
+            </div>
+            <div id="weekSummary" class="week-summary"></div>
+            <div id="weeklyQuestions" class="weekly-list"></div>
+          </div>
+
+          <div class="section entry-advice-section">
+            <div class="section-head">
+              <div class="section-title-stack">
+                <h2>Ask for Perspective</h2>
+                <span id="entryAdviceEstimate" class="subtle">Set OpenRouter settings first.</span>
+              </div>
+            </div>
+            <p class="divider-note">This sends the current entry text to OpenRouter and asks for one reply. Adjust the prompt in the Settings if needed.</p>
+            <div class="actions">
+              <button id="entryAdviceButton" class="primary" type="button">Ask for guidance</button>
+            </div>
+            <p id="entryAdviceStatus" class="status" role="status" aria-live="polite"></p>
+            <div id="entryAdviceResult" class="llm-result entry-advice-result"></div>
+          </div>
+
+          <div class="actions">
+            <p id="entryStatus" class="status" role="status" aria-live="polite"></p>
+          </div>
+        </form>
+      </section>
+
+      <section id="browsePanel" class="tab-panel" role="tabpanel" aria-labelledby="browseTab" data-tab-panel="browse" hidden>
+        <section class="section browse-charts" aria-label="Diary activity charts">
+          <div class="section-head">
+            <h2>Activity</h2>
+          </div>
+          <div class="browse-chart-grid">
+            <article class="browse-chart">
+              <h3>Entries by Year</h3>
+              <div id="browseEntriesByYearChart" class="bar-chart"></div>
+            </article>
+            <article class="browse-chart">
+              <h3>Length by Year</h3>
+              <div id="browseLengthByYearChart" class="bar-chart"></div>
+            </article>
+          </div>
+        </section>
+
+        <div class="browse-layout">
+          <section class="section browse-sidebar">
+            <div class="section-head">
+              <h2>All Entries</h2>
+              <div class="section-actions">
+                <button id="newEntryButton" class="text" type="button">Today / new entry</button>
+                <span id="entryCount" class="subtle">0 entries</span>
+              </div>
+            </div>
+            <label>
+              <span>Search</span>
+              <input id="searchInput" type="search" placeholder="Search decrypted entries">
+            </label>
+            <div id="recentEntries" class="recent-list"></div>
+          </section>
+
+          <section class="section browse-reader" aria-label="Selected diary entry">
+            <div id="browseEntryDetail" class="browse-entry-detail"></div>
+            <p id="browseStatus" class="status" role="status" aria-live="polite"></p>
+          </section>
+        </div>
+      </section>
+
+      <section id="insightsPanel" class="tab-panel" role="tabpanel" aria-labelledby="insightsTab" data-tab-panel="insights" hidden>
+        <div class="insights-layout">
+          <section class="section llm-section insight-wide">
+            <div class="section-head">
+              <div class="section-title-stack">
+                <h2>LLM Insight</h2>
+                <span id="llmEstimate" class="subtle">Projected cost unavailable</span>
+              </div>
+              <span id="llmRuntimeLabel" class="subtle">Model not configured</span>
+            </div>
+            <div class="llm-controls">
+              <label>
+                <span>Scope</span>
+                <select id="llmScopeSelect">
+                  <option value="30">Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                  <option value="all">All entries</option>
+                </select>
+              </label>
+              <button id="llmEntryCacheButton" type="button">Update entry cache</button>
+              <button id="llmYearCacheButton" type="button">Update year summaries</button>
+              <button id="llmGenerateButton" class="primary" type="button">Generate insight</button>
+            </div>
+            <p class="divider-note">Raw diary text is sent only when updating missing or stale entry cache records. Final insights use cached capsules and yearly summaries.</p>
+            <p id="llmCacheStatus" class="subtle">Cache status unavailable.</p>
+            <div id="llmCacheBrowser" class="llm-cache-browser"></div>
+            <p id="llmStatus" class="status" role="status" aria-live="polite"></p>
+            <div id="llmCostReport" class="llm-cost-report"></div>
+            <div id="llmResult" class="llm-result"></div>
+          </section>
+
+          <section class="section insight-wide">
+            <div class="section-head">
+              <h2>Standing Topics</h2>
+              <span id="topicTrendScope" class="subtle">Last 30 days</span>
+            </div>
+            <div id="topicTrendList" class="topic-trend-list"></div>
+          </section>
+
+        </div>
+      </section>
+
+      <section id="backupPanel" class="tab-panel narrow-panel settings-panel" role="tabpanel" aria-labelledby="backupTab" data-tab-panel="backup" hidden>
+        <div class="section">
+          <div class="session-panel" aria-label="Diary session">
+            <div class="session-status">
+              <strong>Private Diary</strong>
+              <span id="unlockSummary" class="subtle">Unlocked</span>
+            </div>
+            <div class="session-controls">
+              <label>
+                <span>Auto-lock after inactivity</span>
+                <select id="autoLockSelect">
+                  <option value="5">5 minutes</option>
+                  <option value="10">10 minutes</option>
+                  <option value="15">15 minutes</option>
+                  <option value="30">30 minutes</option>
+                  <option value="60">60 minutes</option>
+                </select>
+              </label>
+              <button id="lockButton" class="danger" type="button">Lock now</button>
+            </div>
+          </div>
+        </div>
+
+        <section class="section">
+          <h2>Private by Design</h2>
+          <p class="divider-note">
+            Entries are decrypted only while this page is unlocked. Locking clears the key and readable entries from memory. Entry data is sent to the LLM only when you explicitly request it, with Zero Data Retention routing and provider data collection denied on OpenRouter requests.
+          </p>
+        </section>
+
+        <section class="section">
+          <h2>LLM</h2>
+          <div class="llm-settings-grid">
+            <label>
+              <span>OpenRouter API key</span>
+              <input id="llmApiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-...">
+            </label>
+            <label>
+              <span>OpenRouter model</span>
+              <input id="llmModelInput" type="text" spellcheck="false" value="deepseek/deepseek-v3.2">
+            </label>
+            <label>
+              <span>Response language</span>
+              <input id="llmResponseLanguageInput" type="text" value="English" placeholder="English">
+            </label>
+          </div>
+          <p id="llmPricingStatus" class="subtle">Pricing loads from OpenRouter for the saved model.</p>
+          <p class="divider-note">LLM settings and cached insights are encrypted with this vault. Diary entries may be mixed-language; responses use the configured language.</p>
+          <details class="llm-prompt-settings">
+            <summary>
+              <strong>Prompt Templates</strong>
+              <span>8 editable messages</span>
+            </summary>
+            <div class="llm-prompt-grid">
+              <label>
+                <span>Entry advice system</span>
+                <textarea id="llmEntryAdviceSystemPrompt" spellcheck="true"></textarea>
+              </label>
+              <label>
+                <span>Entry advice user</span>
+                <textarea id="llmEntryAdviceUserPrompt" spellcheck="true"></textarea>
+              </label>
+              <label>
+                <span>Entry cache system</span>
+                <textarea id="llmEntryCacheSystemPrompt" spellcheck="true"></textarea>
+              </label>
+              <label>
+                <span>Entry cache user</span>
+                <textarea id="llmEntryCacheUserPrompt" spellcheck="true"></textarea>
+              </label>
+              <label>
+                <span>Year summary system</span>
+                <textarea id="llmYearSummarySystemPrompt" spellcheck="true"></textarea>
+              </label>
+              <label>
+                <span>Year summary user</span>
+                <textarea id="llmYearSummaryUserPrompt" spellcheck="true"></textarea>
+              </label>
+              <label>
+                <span>Final insight system</span>
+                <textarea id="llmFinalInsightSystemPrompt" spellcheck="true"></textarea>
+              </label>
+              <label>
+                <span>Final insight user</span>
+                <textarea id="llmFinalInsightUserPrompt" spellcheck="true"></textarea>
+              </label>
+            </div>
+            <p class="divider-note">Available placeholders: {responseLanguage}, {promptText}, {year}, {entryCapsuleFormatInstructions}, {insightReportFormatInstructions}. Keep {promptText} in user messages.</p>
+          </details>
+          <div class="actions">
+            <button id="llmSaveSettingsButton" class="primary" type="button">Save LLM settings</button>
+            <button id="llmForgetKeyButton" type="button">Forget API key</button>
+            <button id="llmResetPromptsButton" type="button">Reset prompts</button>
+          </div>
+          <p id="llmSettingsStatus" class="status" role="status" aria-live="polite"></p>
+        </section>
+
+        <section class="section">
+          <h2>Appearance</h2>
+          <div class="appearance-grid">
+            <div class="theme-field">
+              <label>
+                <span>Theme</span>
+                <select id="themeSelect">
+                  <option value="sage">Sage</option>
+                  <option value="paper">Paper</option>
+                  <option value="ocean">Ocean</option>
+                  <option value="plum">Plum</option>
+                  <option value="rose">Rose</option>
+                  <option value="dusk">Dusk</option>
+                  <option value="charcoal">Charcoal</option>
+                  <option value="contrast">Contrast</option>
+                </select>
+              </label>
+              <div class="theme-swatches" aria-hidden="true">
+                <span class="swatch-bg"></span>
+                <span class="swatch-surface"></span>
+                <span class="swatch-accent"></span>
+                <span class="swatch-danger"></span>
+              </div>
+            </div>
+            <label class="font-field">
+              <span>Font</span>
+              <select id="fontSelect">
+                <option value="system">System</option>
+                <option value="humanist">Humanist</option>
+                <option value="compact">Compact</option>
+                <option value="rounded">Rounded</option>
+                <option value="serif">Serif</option>
+                <option value="book">Book</option>
+                <option value="classic">Classic</option>
+                <option value="mono">Mono</option>
+              </select>
+            </label>
+            <label>
+              <span>Maximum width (px)</span>
+              <input id="uiWidthInput" type="number" min="720" max="2400" step="40" value="1200" inputmode="numeric">
+            </label>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2>Backup</h2>
+          <div class="backup-box">
+            <p class="subtle">Backups are encrypted. Decrypted Standard Notes JSON can be imported into this unlocked vault.</p>
+            <div class="actions">
+              <button id="exportButton" type="button">Export encrypted JSON</button>
+              <button id="unlockedImportButton" type="button">Import JSON</button>
+            </div>
+            <p id="backupStatus" class="status" role="status" aria-live="polite"></p>
+          </div>
+        </section>
+      </section>
+    </main>
+  </section>
+
+  <input id="backupFileInput" class="hidden" type="file" accept=".json,application/json">
+</div>

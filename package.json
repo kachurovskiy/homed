@@ -1,0 +1,25 @@
+{
+  "name": "private-diary-single-html",
+  "version": "1.0.0",
+  "description": "A local-first encrypted private diary that builds to one static HTML file.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "diary",
+    "journal",
+    "encrypted",
+    "local-first",
+    "single-file"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build.mjs",
+    "check": "npm run typecheck && npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
