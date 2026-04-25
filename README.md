@@ -1,15 +1,27 @@
 # Private Diary
 
-Private Diary is a local-first encrypted journal that builds to a single static `index.html` file. It stores entries in the browser, supports encrypted JSON backups, and can optionally send selected diary context to OpenRouter for LLM-assisted reflection.
+Private Diary is a local-first encrypted journal that runs as a single `index.html` file. It stores entries in the browser, supports encrypted JSON backups, and can optionally send selected diary context to OpenRouter for LLM-assisted reflection.
 
-## Features
+## What It Does
 
-- Single-file static app: the generated `index.html` can be hosted by GitHub Pages or any static web host.
+- Single-file app: open `index.html` in any modern browser.
 - Local encrypted vault: diary entries are stored in IndexedDB after AES-GCM encryption.
 - Password-derived key: the master password is stretched with PBKDF2-SHA-256 before deriving the vault key.
 - Encrypted backups: export and import encrypted JSON backups.
 - Optional OpenRouter integration: LLM calls happen only when requested from the UI.
 - No runtime package dependencies.
+
+## Use The App
+
+Open:
+
+```text
+https://kachurovskiy.com/homed/
+```
+
+To keep a local copy, save the page as `index.html` on your PC and open that file in a modern browser.
+
+The first unlock flow creates a new encrypted vault. After that, unlock with the same master password.
 
 ## Privacy And Security
 
@@ -25,52 +37,14 @@ This app is designed for local-first personal use, but it is not a substitute fo
 
 For sensitive use, run the app from a trusted local copy or a trusted static host, keep encrypted backups, and use a strong unique master password.
 
-## Use The App
-
-Open `index.html` in a modern browser, or host the repository root with any static file server.
-
-GitHub's repository file viewer shows `index.html` as source code. To let people try the app directly from GitHub, this repository includes a GitHub Pages workflow that publishes the generated `index.html` as a static site.
-
-After pushing to GitHub:
-
-1. Open the repository settings.
-2. Go to Pages.
-3. Set the Pages source to GitHub Actions.
-4. Push to `master` or run the Pages workflow manually.
-
-The app will be available at:
-
-```text
-https://<github-user>.github.io/<repository-name>/
-```
-
-For sensitive diary use, prefer a trusted local copy or a dedicated trusted domain. GitHub Pages project sites under the same account share one `github.io` origin, so other pages on that origin are part of the browser trust boundary.
-
-The first unlock flow creates a new encrypted vault. After that, unlock with the same master password.
-
 ## Development
 
-Install dependencies:
+For source changes:
 
 ```sh
 npm ci
-```
-
-Run type checking:
-
-```sh
 npm run typecheck
-```
-
-Build the generated static app:
-
-```sh
 npm run build
-```
-
-Run the full local check:
-
-```sh
 npm run check
 ```
 
