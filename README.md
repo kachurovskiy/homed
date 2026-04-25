@@ -13,11 +13,7 @@ Private Diary is a local-first encrypted journal that runs as a single `index.ht
 
 ## Use The App
 
-Open:
-
-```text
-https://kachurovskiy.com/homed/
-```
+Open https://kachurovskiy.com/homed/
 
 To keep a local copy, save the page as `index.html` on your PC and open that file in a modern browser.
 
