@@ -21,6 +21,7 @@
   uiTheme: "sage",
   uiFont: "system",
   uiMaxWidth: 1200,
+  journalTextHeight: null,
   remoteRequestsInFlight: 0,
   llmScope: "30",
   llmSettings: {

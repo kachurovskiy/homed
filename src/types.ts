@@ -345,6 +345,7 @@ interface UiPreferences {
   theme: UiThemeValue;
   font: UiFontValue;
   uiMaxWidth: number;
+  journalTextHeight: number | null;
 }
 
 interface AppState {
@@ -370,6 +371,7 @@ interface AppState {
   uiTheme: UiThemeValue;
   uiFont: UiFontValue;
   uiMaxWidth: number;
+  journalTextHeight: number | null;
   remoteRequestsInFlight: number;
   llmScope: LlmInsightScope;
   llmSettings: LlmSettings;

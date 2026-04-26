@@ -137,6 +137,7 @@ function bindEvents(): void {
   els.lockedImportButton.addEventListener("click", () => els.backupFileInput.click());
   els.unlockedImportButton.addEventListener("click", () => els.backupFileInput.click());
   els.backupFileInput.addEventListener("change", onBackupFileSelected);
+  bindJournalTextHeightPreference();
   bindTabEvents();
 
   ["pointerdown", "keydown", "touchstart"].forEach((eventName) => {
