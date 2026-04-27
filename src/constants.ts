@@ -54,7 +54,7 @@ const DEFAULT_LLM_PROMPTS = {
     "Do not return JSON.",
     "{entryCapsuleFormatInstructions}"
   ].join("\n"),
-  entryCapsuleUser: "Create cache capsules for these entries. Return field-delimited text only.\n\n{promptText}",
+  entryCapsuleUser: "Create cache capsules for these entries. Return labeled fields only.\n\n{promptText}",
   yearSummarySystem: [
     "You summarize one diary year from cached entry capsules.",
     "Write in {responseLanguage}.",
@@ -62,7 +62,7 @@ const DEFAULT_LLM_PROMPTS = {
     "Do not diagnose medical or mental health conditions.",
     "{insightReportFormatInstructions}"
   ].join("\n"),
-  yearSummaryUser: "Create the {year} yearly summary. Return field-delimited text only.\n\n{promptText}",
+  yearSummaryUser: "Create the {year} yearly summary. Return labeled fields only.\n\n{promptText}",
   finalInsightSystem: [
     "You analyze cached private diary insights for the diary owner.",
     "Write in {responseLanguage}.",
@@ -71,7 +71,7 @@ const DEFAULT_LLM_PROMPTS = {
     "Do not diagnose medical or mental health conditions, do not claim certainty, and do not moralize.",
     "{insightReportFormatInstructions}"
   ].join("\n"),
-  finalInsightUser: "Generate the diary insight from this cached analysis. Return field-delimited text only.\n\n{promptText}"
+  finalInsightUser: "Generate the diary insight from this cached analysis. Return labeled fields only.\n\n{promptText}"
 } as const;
 
 const MOODS = [

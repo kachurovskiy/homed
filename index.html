@@ -2071,7 +2071,7 @@
               "Do not return JSON.",
               "{entryCapsuleFormatInstructions}"
           ].join("\n"),
-          entryCapsuleUser: "Create cache capsules for these entries. Return field-delimited text only.\n\n{promptText}",
+          entryCapsuleUser: "Create cache capsules for these entries. Return labeled fields only.\n\n{promptText}",
           yearSummarySystem: [
               "You summarize one diary year from cached entry capsules.",
               "Write in {responseLanguage}.",
@@ -2079,7 +2079,7 @@
               "Do not diagnose medical or mental health conditions.",
               "{insightReportFormatInstructions}"
           ].join("\n"),
-          yearSummaryUser: "Create the {year} yearly summary. Return field-delimited text only.\n\n{promptText}",
+          yearSummaryUser: "Create the {year} yearly summary. Return labeled fields only.\n\n{promptText}",
           finalInsightSystem: [
               "You analyze cached private diary insights for the diary owner.",
               "Write in {responseLanguage}.",
@@ -2088,7 +2088,7 @@
               "Do not diagnose medical or mental health conditions, do not claim certainty, and do not moralize.",
               "{insightReportFormatInstructions}"
           ].join("\n"),
-          finalInsightUser: "Generate the diary insight from this cached analysis. Return field-delimited text only.\n\n{promptText}"
+          finalInsightUser: "Generate the diary insight from this cached analysis. Return labeled fields only.\n\n{promptText}"
       };
       const MOODS = [
           { value: "steady", label: "Steady", score: 6 },
@@ -4614,7 +4614,7 @@
       }
       function llmEntryCapsuleFormatInstructions() {
           return [
-              `Return fields separated by a line containing only ${LLM_RESPONSE_FIELD_SEPARATOR}.`,
+              "Do not return JSON.",
               "For each diary entry, emit this exact sequence:",
               "DATE: YYYY-MM-DD",
               "SUMMARY: one compact paragraph",
@@ -4624,15 +4624,14 @@
               "UNRESOLVED: one item per line",
               "NEXT_MOVES: one item per line",
               "QUESTIONS: one item per line.",
-              `Put ${LLM_RESPONSE_FIELD_SEPARATOR} between every field and before the next entry's DATE field.`
+              "Start the next entry with a new DATE field. Do not add separators, markdown tables, or code fences."
           ].join(" ");
       }
       function llmInsightReportFormatInstructions() {
           return [
               "Do not return JSON.",
-              `Return exactly six fields separated by a line containing only ${LLM_RESPONSE_FIELD_SEPARATOR}.`,
-              "Use these field names in this order: SUMMARY, PATTERNS, PRESSURE_POINTS, STANDING_TOPICS, NEXT_MOVES, QUESTIONS.",
-              "Write each field as NAME: value.",
+              "Return exactly six labeled fields in this order: SUMMARY, PATTERNS, PRESSURE_POINTS, STANDING_TOPICS, NEXT_MOVES, QUESTIONS.",
+              "Start each field with NAME: and put multi-line field content after that label when needed.",
               "For PATTERNS, PRESSURE_POINTS, and STANDING_TOPICS, use one item per line as ITEM_NAME: detail with short date/year evidence in the detail.",
               "For NEXT_MOVES and QUESTIONS, use one plain item per line."
           ].join(" ");
@@ -4668,18 +4667,21 @@
                   : [];
           if (!sourceItems.length)
               return null;
-          const byDate = new Map();
-          for (const item of sourceItems) {
-              if (isRecord(item) && typeof item.date === "string")
-                  byDate.set(item.date, item);
-          }
+          const wantedDates = new Set(entries.map((entry) => entry.date));
+          const entryByDate = new Map(entries.map((entry) => [entry.date, entry]));
+          const usedDates = new Set();
+          const nextUnusedEntry = () => entries.find((entry) => !usedDates.has(entry.date)) || null;
           const capsules = [];
-          for (const entry of entries) {
-              const item = byDate.get(entry.date);
-              if (!item || !isRecord(item)) {
-                  throw new Error(`OpenRouter did not return an entry capsule for ${entry.date}.`);
-              }
-              capsules.push({
+          for (const item of sourceItems) {
+              if (!isRecord(item))
+                  continue;
+              const explicitDate = typeof item.date === "string" && wantedDates.has(item.date) ? item.date : "";
+              const entry = explicitDate
+                  ? usedDates.has(explicitDate) ? null : entryByDate.get(explicitDate) || null
+                  : nextUnusedEntry();
+              if (!entry)
+                  continue;
+              const capsule = {
                   schemaVersion: LLM_CACHE_SCHEMA_VERSION,
                   id: entryCapsuleRecordId(entry.date),
                   date: entry.date,
@@ -4696,39 +4698,69 @@
                   nextActions: normalizeLlmStringList(item.nextActions || item.actions).slice(0, 8),
                   questions: normalizeLlmStringList(item.questions).slice(0, 8),
                   rawText: JSON.stringify(item)
-              });
+              };
+              if (!hasEntryCapsuleContent(capsule))
+                  continue;
+              usedDates.add(entry.date);
+              capsules.push(capsule);
           }
-          return capsules;
+          return capsules.length ? capsules : null;
       }
       function parseDelimitedEntryCapsuleResponse(text, entries, settings) {
-          const fields = splitLlmResponseFields(text);
+          const fields = splitEntryCapsuleResponseFields(text);
           if (!fields.length)
               return null;
           const byDate = new Map();
+          const fieldOrders = entryCapsuleFieldOrders();
           let currentDate = "";
           let currentFields = null;
+          let currentFieldOrder = -1;
           const wantedDates = new Set(entries.map((entry) => entry.date));
+          const nextUnusedDate = () => entries.find((entry) => !byDate.has(entry.date))?.date || "";
+          const startEntry = (date) => {
+              currentDate = date;
+              currentFields = byDate.get(date) || new Map();
+              byDate.set(date, currentFields);
+              currentFieldOrder = 0;
+              return currentFields;
+          };
           for (const field of fields) {
               if (field.key === "date") {
-                  const date = cleanLlmOutputText(field.body, 20);
-                  currentDate = wantedDates.has(date) ? date : "";
-                  currentFields = currentDate ? new Map() : null;
-                  if (currentDate && currentFields)
-                      byDate.set(currentDate, currentFields);
+                  const date = entryCapsuleDateFromField(field.body, wantedDates);
+                  if (date)
+                      startEntry(date);
+                  else {
+                      currentDate = "";
+                      currentFields = null;
+                      currentFieldOrder = -1;
+                  }
                   continue;
               }
-              if (!currentFields)
+              const fieldOrder = fieldOrders.get(field.key) ?? 99;
+              let fieldsForCurrentEntry = currentFields;
+              if (!fieldsForCurrentEntry) {
+                  const date = nextUnusedDate();
+                  if (!date)
+                      continue;
+                  fieldsForCurrentEntry = startEntry(date);
+              }
+              else if (currentDate && fieldOrder <= currentFieldOrder) {
+                  const date = nextUnusedDate();
+                  if (date)
+                      fieldsForCurrentEntry = startEntry(date);
+              }
+              if (!fieldsForCurrentEntry)
                   continue;
-              const previous = currentFields.get(field.key);
-              currentFields.set(field.key, previous ? `${previous}\n${field.body}` : field.body);
+              const previous = fieldsForCurrentEntry.get(field.key);
+              fieldsForCurrentEntry.set(field.key, previous ? `${previous}\n${field.body}` : field.body);
+              currentFieldOrder = Math.max(currentFieldOrder, fieldOrder);
           }
           const capsules = [];
           for (const entry of entries) {
               const fieldsForEntry = byDate.get(entry.date);
-              if (!fieldsForEntry) {
-                  throw new Error(`OpenRouter did not return an entry capsule for ${entry.date}.`);
-              }
-              capsules.push({
+              if (!fieldsForEntry || !hasEntryCapsuleFieldContent(fieldsForEntry))
+                  continue;
+              const capsule = {
                   schemaVersion: LLM_CACHE_SCHEMA_VERSION,
                   id: entryCapsuleRecordId(entry.date),
                   date: entry.date,
@@ -4745,9 +4777,76 @@
                   nextActions: parseDelimitedStringList(fieldsForEntry.get("nextmoves") || fieldsForEntry.get("nextactions") || fieldsForEntry.get("actions") || "").slice(0, 8),
                   questions: parseDelimitedStringList(fieldsForEntry.get("questions") || "").slice(0, 8),
                   rawText: JSON.stringify(Object.fromEntries(fieldsForEntry))
-              });
+              };
+              if (hasEntryCapsuleContent(capsule))
+                  capsules.push(capsule);
           }
-          return capsules;
+          return capsules.length ? capsules : null;
+      }
+      function entryCapsuleFieldOrders() {
+          return new Map([
+              ["summary", 1],
+              ["themes", 2],
+              ["emotionalpattern", 3],
+              ["pattern", 3],
+              ["standingtopics", 4],
+              ["topics", 4],
+              ["unresolved", 5],
+              ["openthreads", 5],
+              ["nextmoves", 6],
+              ["nextactions", 6],
+              ["actions", 6],
+              ["questions", 7]
+          ]);
+      }
+      function entryCapsuleDateFromField(text, wantedDates) {
+          const normalized = cleanLlmOutputText(text, 80);
+          if (wantedDates.has(normalized))
+              return normalized;
+          const match = /\b\d{4}-\d{2}-\d{2}\b/.exec(normalized);
+          return match && wantedDates.has(match[0]) ? match[0] : "";
+      }
+      function hasEntryCapsuleFieldContent(fields) {
+          return [
+              "summary",
+              "themes",
+              "emotionalpattern",
+              "pattern",
+              "standingtopics",
+              "topics",
+              "unresolved",
+              "openthreads",
+              "nextmoves",
+              "nextactions",
+              "actions",
+              "questions"
+          ].some((key) => Boolean(fields.get(key)?.trim()));
+      }
+      function hasEntryCapsuleContent(capsule) {
+          return Boolean(capsule.summary ||
+              capsule.themes.length ||
+              capsule.emotionalPattern ||
+              capsule.standingTopics.length ||
+              capsule.unresolved.length ||
+              capsule.nextActions.length ||
+              capsule.questions.length);
+      }
+      function splitEntryCapsuleResponseFields(text) {
+          return splitKnownLlmResponseFields(text, [
+              "date",
+              "summary",
+              "themes",
+              "emotionalpattern",
+              "pattern",
+              "standingtopics",
+              "topics",
+              "unresolved",
+              "openthreads",
+              "nextmoves",
+              "nextactions",
+              "actions",
+              "questions"
+          ]);
       }
       function buildYearSummaryBundle(year, settings) {
           const capsules = entriesForYear(year)
@@ -5174,23 +5273,52 @@
               report.questions.length);
       }
       function splitLlmResponseFields(text) {
+          return splitKnownLlmResponseFields(text, [
+              "summary",
+              "patterns",
+              "pressurepoints",
+              "tensions",
+              "risks",
+              "standingtopics",
+              "topics",
+              "nextmoves",
+              "nextactions",
+              "actions",
+              "questions"
+          ]);
+      }
+      function splitKnownLlmResponseFields(text, allowedFieldKeys) {
+          const allowedKeys = new Set(allowedFieldKeys);
           const normalized = text.replace(/\r\n/g, "\n").trim();
           if (!normalized)
               return [];
-          return normalized
-              .split(/\n\s*NEXT_FIELD\s*\n/gi)
-              .map((part) => parseLlmResponseField(part))
-              .filter((field) => Boolean(field));
-      }
-      function parseLlmResponseField(text) {
-          const trimmed = text.trim();
-          const match = /^([A-Za-z][A-Za-z0-9 _-]{0,80})\s*:\s*([\s\S]*)$/.exec(trimmed);
-          if (!match)
-              return null;
-          const name = cleanLlmOutputText(match[1], 80);
-          const body = match[2]?.trim() || "";
-          const key = normalizeLlmFieldName(name);
-          return key ? { key, name, body } : null;
+          const fields = [];
+          let current = null;
+          const pushCurrent = () => {
+              if (!current)
+                  return;
+              current.body = current.body.trim();
+              fields.push(current);
+              current = null;
+          };
+          for (const rawLine of normalized.split("\n")) {
+              const line = rawLine.trimEnd();
+              if (line.trim().toUpperCase() === LLM_RESPONSE_FIELD_SEPARATOR)
+                  continue;
+              const match = /^([A-Za-z][A-Za-z0-9 _-]{0,80})\s*:\s*(.*)$/.exec(line.trimStart());
+              const key = match ? normalizeLlmFieldName(match[1] || "") : "";
+              if (match && allowedKeys.has(key)) {
+                  pushCurrent();
+                  const name = cleanLlmOutputText(match[1], 80);
+                  current = { key, name, body: match[2]?.trim() || "" };
+                  continue;
+              }
+              if (current) {
+                  current.body = current.body ? `${current.body}\n${line}` : line.trim();
+              }
+          }
+          pushCurrent();
+          return fields;
       }
       function normalizeLlmFieldName(value) {
           return value.toLowerCase().replace(/[^a-z0-9]+/g, "");

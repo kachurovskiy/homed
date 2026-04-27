@@ -1409,7 +1409,7 @@ function entryCapsuleCompletionTokens(entries: DiaryEntry[]): number {
 
 function llmEntryCapsuleFormatInstructions(): string {
   return [
-    `Return fields separated by a line containing only ${LLM_RESPONSE_FIELD_SEPARATOR}.`,
+    "Do not return JSON.",
     "For each diary entry, emit this exact sequence:",
     "DATE: YYYY-MM-DD",
     "SUMMARY: one compact paragraph",
@@ -1419,16 +1419,15 @@ function llmEntryCapsuleFormatInstructions(): string {
     "UNRESOLVED: one item per line",
     "NEXT_MOVES: one item per line",
     "QUESTIONS: one item per line.",
-    `Put ${LLM_RESPONSE_FIELD_SEPARATOR} between every field and before the next entry's DATE field.`
+    "Start the next entry with a new DATE field. Do not add separators, markdown tables, or code fences."
   ].join(" ");
 }
 
 function llmInsightReportFormatInstructions(): string {
   return [
     "Do not return JSON.",
-    `Return exactly six fields separated by a line containing only ${LLM_RESPONSE_FIELD_SEPARATOR}.`,
-    "Use these field names in this order: SUMMARY, PATTERNS, PRESSURE_POINTS, STANDING_TOPICS, NEXT_MOVES, QUESTIONS.",
-    "Write each field as NAME: value.",
+    "Return exactly six labeled fields in this order: SUMMARY, PATTERNS, PRESSURE_POINTS, STANDING_TOPICS, NEXT_MOVES, QUESTIONS.",
+    "Start each field with NAME: and put multi-line field content after that label when needed.",
     "For PATTERNS, PRESSURE_POINTS, and STANDING_TOPICS, use one item per line as ITEM_NAME: detail with short date/year evidence in the detail.",
     "For NEXT_MOVES and QUESTIONS, use one plain item per line."
   ].join(" ");
@@ -1467,18 +1466,21 @@ function parseJsonEntryCapsuleResponse(text: string, entries: DiaryEntry[], sett
       : [];
   if (!sourceItems.length) return null;
 
-  const byDate = new Map<string, unknown>();
-  for (const item of sourceItems) {
-    if (isRecord(item) && typeof item.date === "string") byDate.set(item.date, item);
-  }
-
+  const wantedDates = new Set(entries.map((entry) => entry.date));
+  const entryByDate = new Map(entries.map((entry) => [entry.date, entry]));
+  const usedDates = new Set<string>();
+  const nextUnusedEntry = () => entries.find((entry) => !usedDates.has(entry.date)) || null;
   const capsules: LlmEntryCapsule[] = [];
-  for (const entry of entries) {
-    const item = byDate.get(entry.date);
-    if (!item || !isRecord(item)) {
-      throw new Error(`OpenRouter did not return an entry capsule for ${entry.date}.`);
-    }
-    capsules.push({
+
+  for (const item of sourceItems) {
+    if (!isRecord(item)) continue;
+    const explicitDate = typeof item.date === "string" && wantedDates.has(item.date) ? item.date : "";
+    const entry = explicitDate
+      ? usedDates.has(explicitDate) ? null : entryByDate.get(explicitDate) || null
+      : nextUnusedEntry();
+    if (!entry) continue;
+
+    const capsule: LlmEntryCapsule = {
       schemaVersion: LLM_CACHE_SCHEMA_VERSION,
       id: entryCapsuleRecordId(entry.date),
       date: entry.date,
@@ -1495,43 +1497,70 @@ function parseJsonEntryCapsuleResponse(text: string, entries: DiaryEntry[], sett
       nextActions: normalizeLlmStringList(item.nextActions || item.actions).slice(0, 8),
       questions: normalizeLlmStringList(item.questions).slice(0, 8),
       rawText: JSON.stringify(item)
-    });
+    };
+    if (!hasEntryCapsuleContent(capsule)) continue;
+
+    usedDates.add(entry.date);
+    capsules.push(capsule);
   }
 
-  return capsules;
+  return capsules.length ? capsules : null;
 }
 
 function parseDelimitedEntryCapsuleResponse(text: string, entries: DiaryEntry[], settings: LlmSettings): LlmEntryCapsule[] | null {
-  const fields = splitLlmResponseFields(text);
+  const fields = splitEntryCapsuleResponseFields(text);
   if (!fields.length) return null;
 
   const byDate = new Map<string, Map<string, string>>();
+  const fieldOrders = entryCapsuleFieldOrders();
   let currentDate = "";
   let currentFields: Map<string, string> | null = null;
+  let currentFieldOrder = -1;
   const wantedDates = new Set(entries.map((entry) => entry.date));
+  const nextUnusedDate = () => entries.find((entry) => !byDate.has(entry.date))?.date || "";
+  const startEntry = (date: string): Map<string, string> => {
+    currentDate = date;
+    currentFields = byDate.get(date) || new Map<string, string>();
+    byDate.set(date, currentFields);
+    currentFieldOrder = 0;
+    return currentFields;
+  };
 
   for (const field of fields) {
     if (field.key === "date") {
-      const date = cleanLlmOutputText(field.body, 20);
-      currentDate = wantedDates.has(date) ? date : "";
-      currentFields = currentDate ? new Map<string, string>() : null;
-      if (currentDate && currentFields) byDate.set(currentDate, currentFields);
+      const date = entryCapsuleDateFromField(field.body, wantedDates);
+      if (date) startEntry(date);
+      else {
+        currentDate = "";
+        currentFields = null;
+        currentFieldOrder = -1;
+      }
       continue;
     }
 
-    if (!currentFields) continue;
-    const previous = currentFields.get(field.key);
-    currentFields.set(field.key, previous ? `${previous}\n${field.body}` : field.body);
+    const fieldOrder = fieldOrders.get(field.key) ?? 99;
+    let fieldsForCurrentEntry: Map<string, string> | null = currentFields;
+    if (!fieldsForCurrentEntry) {
+      const date = nextUnusedDate();
+      if (!date) continue;
+      fieldsForCurrentEntry = startEntry(date);
+    } else if (currentDate && fieldOrder <= currentFieldOrder) {
+      const date = nextUnusedDate();
+      if (date) fieldsForCurrentEntry = startEntry(date);
+    }
+
+    if (!fieldsForCurrentEntry) continue;
+    const previous = fieldsForCurrentEntry.get(field.key);
+    fieldsForCurrentEntry.set(field.key, previous ? `${previous}\n${field.body}` : field.body);
+    currentFieldOrder = Math.max(currentFieldOrder, fieldOrder);
   }
 
   const capsules: LlmEntryCapsule[] = [];
   for (const entry of entries) {
     const fieldsForEntry = byDate.get(entry.date);
-    if (!fieldsForEntry) {
-      throw new Error(`OpenRouter did not return an entry capsule for ${entry.date}.`);
-    }
+    if (!fieldsForEntry || !hasEntryCapsuleFieldContent(fieldsForEntry)) continue;
 
-    capsules.push({
+    const capsule: LlmEntryCapsule = {
       schemaVersion: LLM_CACHE_SCHEMA_VERSION,
       id: entryCapsuleRecordId(entry.date),
       date: entry.date,
@@ -1548,10 +1577,82 @@ function parseDelimitedEntryCapsuleResponse(text: string, entries: DiaryEntry[],
       nextActions: parseDelimitedStringList(fieldsForEntry.get("nextmoves") || fieldsForEntry.get("nextactions") || fieldsForEntry.get("actions") || "").slice(0, 8),
       questions: parseDelimitedStringList(fieldsForEntry.get("questions") || "").slice(0, 8),
       rawText: JSON.stringify(Object.fromEntries(fieldsForEntry))
-    });
+    };
+    if (hasEntryCapsuleContent(capsule)) capsules.push(capsule);
   }
 
-  return capsules;
+  return capsules.length ? capsules : null;
+}
+
+function entryCapsuleFieldOrders(): Map<string, number> {
+  return new Map([
+    ["summary", 1],
+    ["themes", 2],
+    ["emotionalpattern", 3],
+    ["pattern", 3],
+    ["standingtopics", 4],
+    ["topics", 4],
+    ["unresolved", 5],
+    ["openthreads", 5],
+    ["nextmoves", 6],
+    ["nextactions", 6],
+    ["actions", 6],
+    ["questions", 7]
+  ]);
+}
+
+function entryCapsuleDateFromField(text: string, wantedDates: Set<string>): string {
+  const normalized = cleanLlmOutputText(text, 80);
+  if (wantedDates.has(normalized)) return normalized;
+  const match = /\b\d{4}-\d{2}-\d{2}\b/.exec(normalized);
+  return match && wantedDates.has(match[0]) ? match[0] : "";
+}
+
+function hasEntryCapsuleFieldContent(fields: Map<string, string>): boolean {
+  return [
+    "summary",
+    "themes",
+    "emotionalpattern",
+    "pattern",
+    "standingtopics",
+    "topics",
+    "unresolved",
+    "openthreads",
+    "nextmoves",
+    "nextactions",
+    "actions",
+    "questions"
+  ].some((key) => Boolean(fields.get(key)?.trim()));
+}
+
+function hasEntryCapsuleContent(capsule: LlmEntryCapsule): boolean {
+  return Boolean(
+    capsule.summary ||
+    capsule.themes.length ||
+    capsule.emotionalPattern ||
+    capsule.standingTopics.length ||
+    capsule.unresolved.length ||
+    capsule.nextActions.length ||
+    capsule.questions.length
+  );
+}
+
+function splitEntryCapsuleResponseFields(text: string): LlmResponseField[] {
+  return splitKnownLlmResponseFields(text, [
+    "date",
+    "summary",
+    "themes",
+    "emotionalpattern",
+    "pattern",
+    "standingtopics",
+    "topics",
+    "unresolved",
+    "openthreads",
+    "nextmoves",
+    "nextactions",
+    "actions",
+    "questions"
+  ]);
 }
 
 function buildYearSummaryBundle(year: string, settings: LlmSettings): LlmRequestBundle {
@@ -2014,23 +2115,56 @@ type LlmResponseField = {
 };
 
 function splitLlmResponseFields(text: string): LlmResponseField[] {
+  return splitKnownLlmResponseFields(text, [
+    "summary",
+    "patterns",
+    "pressurepoints",
+    "tensions",
+    "risks",
+    "standingtopics",
+    "topics",
+    "nextmoves",
+    "nextactions",
+    "actions",
+    "questions"
+  ]);
+}
+
+function splitKnownLlmResponseFields(text: string, allowedFieldKeys: string[]): LlmResponseField[] {
+  const allowedKeys = new Set(allowedFieldKeys);
   const normalized = text.replace(/\r\n/g, "\n").trim();
   if (!normalized) return [];
 
-  return normalized
-    .split(/\n\s*NEXT_FIELD\s*\n/gi)
-    .map((part) => parseLlmResponseField(part))
-    .filter((field): field is LlmResponseField => Boolean(field));
-}
+  const fields: LlmResponseField[] = [];
+  let current: LlmResponseField | null = null;
 
-function parseLlmResponseField(text: string): LlmResponseField | null {
-  const trimmed = text.trim();
-  const match = /^([A-Za-z][A-Za-z0-9 _-]{0,80})\s*:\s*([\s\S]*)$/.exec(trimmed);
-  if (!match) return null;
-  const name = cleanLlmOutputText(match[1], 80);
-  const body = match[2]?.trim() || "";
-  const key = normalizeLlmFieldName(name);
-  return key ? { key, name, body } : null;
+  const pushCurrent = () => {
+    if (!current) return;
+    current.body = current.body.trim();
+    fields.push(current);
+    current = null;
+  };
+
+  for (const rawLine of normalized.split("\n")) {
+    const line = rawLine.trimEnd();
+    if (line.trim().toUpperCase() === LLM_RESPONSE_FIELD_SEPARATOR) continue;
+
+    const match = /^([A-Za-z][A-Za-z0-9 _-]{0,80})\s*:\s*(.*)$/.exec(line.trimStart());
+    const key = match ? normalizeLlmFieldName(match[1] || "") : "";
+    if (match && allowedKeys.has(key)) {
+      pushCurrent();
+      const name = cleanLlmOutputText(match[1], 80);
+      current = { key, name, body: match[2]?.trim() || "" };
+      continue;
+    }
+
+    if (current) {
+      current.body = current.body ? `${current.body}\n${line}` : line.trim();
+    }
+  }
+
+  pushCurrent();
+  return fields;
 }
 
 function normalizeLlmFieldName(value: string): string {
