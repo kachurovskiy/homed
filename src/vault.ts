@@ -206,6 +206,10 @@ function clearUnlockedDom(): void {
   els.llmPricingStatus.textContent = "Pricing loads from OpenRouter for the saved model.";
   els.topicTrendScope.textContent = "Last 30 days";
   els.topicTrendList.replaceChildren();
+  els.txtExportSortSelect.value = "asc";
+  els.txtExportIncludeEntryAdviceInput.checked = false;
+  els.txtExportIncludeEntryCapsulesInput.checked = false;
+  els.txtExportIncludeYearSummariesInput.checked = false;
   setStatus(els.backupStatus, "", "");
   setStatus(els.entryStatus, "", "");
   setStatus(els.entryAdviceStatus, "", "");

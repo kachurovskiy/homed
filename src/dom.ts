@@ -26,6 +26,11 @@
     browseStatus: getRequiredElement("browseStatus"),
     newEntryButton: getRequiredElement("newEntryButton"),
     exportButton: getRequiredElement("exportButton"),
+    exportTxtButton: getRequiredElement("exportTxtButton"),
+    txtExportSortSelect: getRequiredElement("txtExportSortSelect"),
+    txtExportIncludeEntryAdviceInput: getRequiredElement("txtExportIncludeEntryAdviceInput"),
+    txtExportIncludeEntryCapsulesInput: getRequiredElement("txtExportIncludeEntryCapsulesInput"),
+    txtExportIncludeYearSummariesInput: getRequiredElement("txtExportIncludeYearSummariesInput"),
     backupStatus: getRequiredElement("backupStatus"),
     entryForm: getRequiredElement("entryForm"),
     entryDate: getRequiredElement("entryDate"),
@@ -134,6 +139,7 @@ function bindEvents(): void {
   els.fontSelect.addEventListener("change", onFontChange);
   els.uiWidthInput.addEventListener("change", onUiWidthChange);
   els.exportButton.addEventListener("click", exportBackup);
+  els.exportTxtButton.addEventListener("click", () => void exportPlainTextEntries());
   els.lockedImportButton.addEventListener("click", () => els.backupFileInput.click());
   els.unlockedImportButton.addEventListener("click", () => els.backupFileInput.click());
   els.backupFileInput.addEventListener("change", onBackupFileSelected);

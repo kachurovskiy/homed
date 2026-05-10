@@ -7,6 +7,7 @@ type LlmInsightScope = (typeof LLM_INSIGHT_SCOPES)[number]["value"];
 type LlmBusyAction = "" | "settings" | "entry-advice" | "entries" | "years" | "insight" | "delete-cache";
 type LlmCacheRecordKind = "entry-capsule" | "year-summary" | "run-log";
 type LlmCacheRecordMode = "editable" | "readonly";
+type TxtExportSort = "asc" | "desc";
 type StatusTone = "" | "ok" | "warn" | "error";
 type JsonRecord = Record<string, unknown>;
 
@@ -129,6 +130,13 @@ interface StandardNotesImportPlan {
   entries: StandardNotesImportedEntry[];
   noteCount: number;
   skipped: number;
+}
+
+interface PlainTextExportOptions {
+  sort: TxtExportSort;
+  includeEntryAdvice: boolean;
+  includeEntryCapsules: boolean;
+  includeYearSummaries: boolean;
 }
 
 interface TopicObservation {
@@ -413,6 +421,11 @@ interface AppElements {
   browseStatus: HTMLElement;
   newEntryButton: HTMLButtonElement;
   exportButton: HTMLButtonElement;
+  exportTxtButton: HTMLButtonElement;
+  txtExportSortSelect: HTMLSelectElement;
+  txtExportIncludeEntryAdviceInput: HTMLInputElement;
+  txtExportIncludeEntryCapsulesInput: HTMLInputElement;
+  txtExportIncludeYearSummariesInput: HTMLInputElement;
   backupStatus: HTMLElement;
   entryForm: HTMLFormElement;
   entryDate: HTMLInputElement;
@@ -504,6 +517,11 @@ const elementTypes = {
   browseStatus: HTMLElement,
   newEntryButton: HTMLButtonElement,
   exportButton: HTMLButtonElement,
+  exportTxtButton: HTMLButtonElement,
+  txtExportSortSelect: HTMLSelectElement,
+  txtExportIncludeEntryAdviceInput: HTMLInputElement,
+  txtExportIncludeEntryCapsulesInput: HTMLInputElement,
+  txtExportIncludeYearSummariesInput: HTMLInputElement,
   backupStatus: HTMLElement,
   entryForm: HTMLFormElement,
   entryDate: HTMLInputElement,

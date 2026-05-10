@@ -14,19 +14,241 @@
     };
 
     const json = JSON.stringify(backup, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `private-diary-encrypted-backup-${todayLocal()}.json`;
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadTextFile(`private-diary-encrypted-backup-${todayLocal()}.json`, json, "application/json");
     setStatus(els.backupStatus, "Encrypted backup exported.", "ok");
   } catch (error) {
     setStatus(els.backupStatus, "Export failed: " + readableError(error), "error");
   }
+}
+
+async function exportPlainTextEntries(): Promise<void> {
+  try {
+    if (!state.key) throw new Error("Unlock the vault before exporting TXT.");
+    setStatus(els.backupStatus, "Preparing unencrypted TXT export...", "warn");
+    const saved = await flushAutoSave();
+    if (!saved) throw new Error("The current entry could not be saved, so export was cancelled.");
+
+    const options = collectPlainTextExportOptions();
+    const entries = options.sort === "asc" ? sortedEntriesAsc() : sortedEntriesDesc();
+    if (!entries.length) throw new Error("No entries to export.");
+
+    const text = buildPlainTextExport(entries, options);
+    downloadTextFile(`private-diary-unencrypted-${options.sort}-${todayLocal()}.txt`, text, "text/plain;charset=utf-8");
+    setStatus(els.backupStatus, `Unencrypted TXT exported with ${entries.length} entr${entries.length === 1 ? "y" : "ies"}.`, "ok");
+    resetAutoLockTimer();
+  } catch (error) {
+    setStatus(els.backupStatus, "TXT export failed: " + readableError(error), "error");
+  }
+}
+
+function collectPlainTextExportOptions(): PlainTextExportOptions {
+  return {
+    sort: els.txtExportSortSelect.value === "desc" ? "desc" : "asc",
+    includeEntryAdvice: els.txtExportIncludeEntryAdviceInput.checked,
+    includeEntryCapsules: els.txtExportIncludeEntryCapsulesInput.checked,
+    includeYearSummaries: els.txtExportIncludeYearSummariesInput.checked
+  };
+}
+
+function buildPlainTextExport(entries: DiaryEntry[], options: PlainTextExportOptions): string {
+  const lines: string[] = [
+    "Private Diary TXT Export",
+    `Exported: ${new Date().toISOString()}`,
+    "Format: Unencrypted plain text",
+    `Sort: ${options.sort === "asc" ? "Date ascending" : "Date descending"}`,
+    `Entries: ${entries.length}`,
+    `AI included: ${plainTextAiIncludedLabel(options)}`,
+    "",
+    "This file is not encrypted.",
+    "",
+    "=".repeat(72),
+    ""
+  ];
+
+  for (const entry of entries) {
+    appendPlainTextEntry(lines, entry, options);
+    lines.push("=".repeat(72), "");
+  }
+
+  if (options.includeYearSummaries) {
+    appendPlainTextYearSummaries(lines, options.sort);
+  }
+
+  return lines.join("\n").replace(/\n{4,}/g, "\n\n\n").trimEnd() + "\n";
+}
+
+function plainTextAiIncludedLabel(options: PlainTextExportOptions): string {
+  const labels: string[] = [];
+  if (options.includeEntryAdvice) labels.push("entry perspectives");
+  if (options.includeEntryCapsules) labels.push("entry capsules");
+  if (options.includeYearSummaries) labels.push("year summaries");
+  return labels.length ? labels.join(", ") : "none";
+}
+
+function appendPlainTextEntry(lines: string[], entry: DiaryEntry, options: PlainTextExportOptions): void {
+  const record = state.records.get(entry.date);
+  lines.push(`# ${entry.date} - ${formatDateLong(entry.date)}`);
+  lines.push(`Mood: ${entry.mood ? moodLabel(entry.mood) : "Not set"}`);
+  lines.push(`Energy: ${entry.energy}/10`);
+  lines.push(`Stress: ${entry.stress}/10`);
+  lines.push(`Themes: ${entry.themes.length ? entry.themes.join(", ") : "None"}`);
+  if (record) {
+    lines.push(`Created: ${record.createdAt}`);
+    lines.push(`Updated: ${record.updatedAt}`);
+  }
+  lines.push("");
+
+  appendPlainTextBlock(lines, "Journal", entry.journalText || "No journal text saved.");
+  appendPlainTextAnswers(lines, "Reflection", reflectionAnswers(entry));
+  appendPlainTextAnswers(lines, "Weekly Review", weeklyAnswers(entry));
+  appendPlainTextTopics(lines, entry.standingTopics);
+
+  if (options.includeEntryAdvice) {
+    appendPlainTextEntryAdvice(lines, entry);
+  }
+  if (options.includeEntryCapsules) {
+    appendPlainTextEntryCapsule(lines, entry);
+  }
+}
+
+function appendPlainTextBlock(lines: string[], title: string, text: string): void {
+  lines.push(`## ${title}`);
+  lines.push(normalizeExportText(text) || "None saved.");
+  lines.push("");
+}
+
+function appendPlainTextAnswers(lines: string[], title: string, answers: Array<[string, string]>): void {
+  lines.push(`## ${title}`);
+  if (!answers.length) {
+    lines.push("No answers saved.", "");
+    return;
+  }
+
+  for (const [question, answer] of answers) {
+    lines.push(question);
+    lines.push(normalizeExportText(answer));
+    lines.push("");
+  }
+}
+
+function appendPlainTextTopics(lines: string[], topics: StandingTopic[]): void {
+  lines.push("## Standing Topics");
+  if (!topics.length) {
+    lines.push("No standing topics saved.", "");
+    return;
+  }
+
+  for (const topic of topics) {
+    const direction = topic.direction ? topicDirectionLabel(topic.direction) : "";
+    lines.push(`- ${topic.title}: ${topic.acuteness}/10${direction ? " - " + direction : ""}`);
+    if (topic.comment) lines.push(`  Comment: ${normalizeExportText(topic.comment)}`);
+    if (topic.nextStep) lines.push(`  Next: ${normalizeExportText(topic.nextStep)}`);
+  }
+  lines.push("");
+}
+
+function appendPlainTextEntryAdvice(lines: string[], entry: DiaryEntry): void {
+  const advice = state.llmEntryAdviceRuns.get(entry.date);
+  if (!advice) return;
+
+  lines.push("## AI Entry Perspective");
+  lines.push(`Generated: ${advice.generatedAt}`);
+  lines.push(`Model: ${advice.model}`);
+  lines.push(`Language: ${advice.responseLanguage}`);
+  lines.push("");
+  lines.push(normalizeExportText(advice.rawText));
+  lines.push("");
+}
+
+function appendPlainTextEntryCapsule(lines: string[], entry: DiaryEntry): void {
+  const capsule = state.llmEntryCapsules.get(entry.date);
+  if (!capsule) return;
+
+  lines.push("## AI Entry Capsule");
+  lines.push(`Generated: ${capsule.generatedAt}`);
+  lines.push(`Model: ${capsule.model}`);
+  lines.push(`Language: ${capsule.responseLanguage}`);
+  lines.push("");
+  appendPlainTextField(lines, "Summary", capsule.summary);
+  appendPlainTextField(lines, "Emotional Pattern", capsule.emotionalPattern);
+  appendPlainTextList(lines, "Themes", capsule.themes);
+  appendPlainTextInsightItems(lines, "Standing Topics", capsule.standingTopics);
+  appendPlainTextList(lines, "Unresolved", capsule.unresolved);
+  appendPlainTextList(lines, "Next Moves", capsule.nextActions);
+  appendPlainTextList(lines, "Questions", capsule.questions);
+}
+
+function appendPlainTextYearSummaries(lines: string[], sort: TxtExportSort): void {
+  const summaries = Array.from(state.llmYearSummaries.values())
+    .sort((a, b) => sort === "asc" ? a.year.localeCompare(b.year) : b.year.localeCompare(a.year));
+
+  if (!summaries.length) return;
+
+  lines.push("# AI Year Summaries", "");
+  for (const summary of summaries) {
+    lines.push(`## ${summary.year}`);
+    lines.push(`Generated: ${summary.generatedAt}`);
+    lines.push(`Model: ${summary.model}`);
+    lines.push(`Language: ${summary.responseLanguage}`);
+    lines.push(`Entries: ${summary.entryCount}`);
+    lines.push("");
+    appendPlainTextLlmReport(lines, summary.report);
+    lines.push("-".repeat(72), "");
+  }
+}
+
+function appendPlainTextLlmReport(lines: string[], report: LlmInsightReport): void {
+  appendPlainTextField(lines, "Summary", report.summary);
+  appendPlainTextInsightItems(lines, "Patterns", report.patterns);
+  appendPlainTextInsightItems(lines, "Pressure Points", report.pressurePoints);
+  appendPlainTextInsightItems(lines, "Standing Topics", report.standingTopics);
+  appendPlainTextList(lines, "Next Moves", report.nextActions);
+  appendPlainTextList(lines, "Questions", report.questions);
+}
+
+function appendPlainTextField(lines: string[], label: string, value: string): void {
+  const text = normalizeExportText(value);
+  if (!text) return;
+  lines.push(`${label}:`);
+  lines.push(text);
+  lines.push("");
+}
+
+function appendPlainTextList(lines: string[], title: string, values: string[]): void {
+  const cleanValues = values.map(normalizeExportText).filter(Boolean);
+  if (!cleanValues.length) return;
+  lines.push(`${title}:`);
+  for (const value of cleanValues) lines.push(`- ${value}`);
+  lines.push("");
+}
+
+function appendPlainTextInsightItems(lines: string[], title: string, items: LlmInsightItem[]): void {
+  if (!items.length) return;
+  lines.push(`${title}:`);
+  for (const item of items) {
+    const titleText = normalizeExportText(item.title);
+    const detail = normalizeExportText(item.detail);
+    const evidence = item.evidence.map(normalizeExportText).filter(Boolean);
+    lines.push(`- ${titleText || "Item"}${detail ? ": " + detail : ""}`);
+    if (evidence.length) lines.push(`  Evidence: ${evidence.join(" | ")}`);
+  }
+  lines.push("");
+}
+
+function normalizeExportText(value: unknown): string {
+  return typeof value === "string" ? value.replace(/\r\n/g, "\n").trim() : "";
+}
+
+function downloadTextFile(filename: string, text: string, type: string): void {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 async function onBackupFileSelected(event: Event): Promise<void> {

@@ -371,7 +371,36 @@
         <section class="section">
           <h2>Backup</h2>
           <div class="backup-box">
-            <p class="subtle">Backups are encrypted. Decrypted Standard Notes JSON can be imported into this unlocked vault.</p>
+            <p class="subtle">Backups are encrypted. Decrypted Standard Notes JSON can be imported into this unlocked vault. Plain TXT exports are unencrypted.</p>
+            <div class="plain-export-box">
+              <h3>Plain TXT</h3>
+              <div class="plain-export-grid">
+                <label>
+                  <span>Sort entries</span>
+                  <select id="txtExportSortSelect">
+                    <option value="asc">Date ascending</option>
+                    <option value="desc">Date descending</option>
+                  </select>
+                </label>
+                <div class="plain-export-options" aria-label="Plain TXT AI content">
+                  <label class="checkbox-label">
+                    <input id="txtExportIncludeEntryAdviceInput" type="checkbox">
+                    <span>Include entry perspectives</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input id="txtExportIncludeEntryCapsulesInput" type="checkbox">
+                    <span>Include entry capsules</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input id="txtExportIncludeYearSummariesInput" type="checkbox">
+                    <span>Include year summaries</span>
+                  </label>
+                </div>
+              </div>
+              <div class="actions">
+                <button id="exportTxtButton" type="button">Export unencrypted TXT</button>
+              </div>
+            </div>
             <div class="actions">
               <button id="exportButton" type="button">Export encrypted JSON</button>
               <button id="unlockedImportButton" type="button">Import JSON</button>

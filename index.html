@@ -1561,6 +1561,44 @@
       gap: 0.7rem;
     }
 
+    .plain-export-box {
+      display: grid;
+      gap: 0.7rem;
+      border-top: 1px solid var(--line);
+      padding-top: 0.75rem;
+    }
+
+    .plain-export-grid {
+      display: grid;
+      grid-template-columns: minmax(12rem, 0.7fr) minmax(14rem, 1fr);
+      gap: 0.85rem;
+      align-items: start;
+    }
+
+    .plain-export-options {
+      display: grid;
+      gap: 0.48rem;
+      padding-top: 1.44rem;
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      color: var(--ink);
+      font-weight: 650;
+    }
+
+    .checkbox-label input[type="checkbox"] {
+      width: auto;
+      min-height: auto;
+      accent-color: var(--accent);
+    }
+
+    .checkbox-label span {
+      color: var(--ink);
+    }
+
     .sr-only {
       position: absolute;
       width: 1px;
@@ -1598,6 +1636,14 @@
 
       .workspace {
         min-height: auto;
+      }
+
+      .plain-export-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .plain-export-options {
+        padding-top: 0;
       }
 
       .browse-layout,
@@ -1999,7 +2045,36 @@
           <section class="section">
             <h2>Backup</h2>
             <div class="backup-box">
-              <p class="subtle">Backups are encrypted. Decrypted Standard Notes JSON can be imported into this unlocked vault.</p>
+              <p class="subtle">Backups are encrypted. Decrypted Standard Notes JSON can be imported into this unlocked vault. Plain TXT exports are unencrypted.</p>
+              <div class="plain-export-box">
+                <h3>Plain TXT</h3>
+                <div class="plain-export-grid">
+                  <label>
+                    <span>Sort entries</span>
+                    <select id="txtExportSortSelect">
+                      <option value="asc">Date ascending</option>
+                      <option value="desc">Date descending</option>
+                    </select>
+                  </label>
+                  <div class="plain-export-options" aria-label="Plain TXT AI content">
+                    <label class="checkbox-label">
+                      <input id="txtExportIncludeEntryAdviceInput" type="checkbox">
+                      <span>Include entry perspectives</span>
+                    </label>
+                    <label class="checkbox-label">
+                      <input id="txtExportIncludeEntryCapsulesInput" type="checkbox">
+                      <span>Include entry capsules</span>
+                    </label>
+                    <label class="checkbox-label">
+                      <input id="txtExportIncludeYearSummariesInput" type="checkbox">
+                      <span>Include year summaries</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="actions">
+                  <button id="exportTxtButton" type="button">Export unencrypted TXT</button>
+                </div>
+              </div>
               <div class="actions">
                 <button id="exportButton" type="button">Export encrypted JSON</button>
                 <button id="unlockedImportButton" type="button">Import JSON</button>
@@ -2190,6 +2265,11 @@
           browseStatus: HTMLElement,
           newEntryButton: HTMLButtonElement,
           exportButton: HTMLButtonElement,
+          exportTxtButton: HTMLButtonElement,
+          txtExportSortSelect: HTMLSelectElement,
+          txtExportIncludeEntryAdviceInput: HTMLInputElement,
+          txtExportIncludeEntryCapsulesInput: HTMLInputElement,
+          txtExportIncludeYearSummariesInput: HTMLInputElement,
           backupStatus: HTMLElement,
           entryForm: HTMLFormElement,
           entryDate: HTMLInputElement,
@@ -2561,6 +2641,11 @@
               browseStatus: getRequiredElement("browseStatus"),
               newEntryButton: getRequiredElement("newEntryButton"),
               exportButton: getRequiredElement("exportButton"),
+              exportTxtButton: getRequiredElement("exportTxtButton"),
+              txtExportSortSelect: getRequiredElement("txtExportSortSelect"),
+              txtExportIncludeEntryAdviceInput: getRequiredElement("txtExportIncludeEntryAdviceInput"),
+              txtExportIncludeEntryCapsulesInput: getRequiredElement("txtExportIncludeEntryCapsulesInput"),
+              txtExportIncludeYearSummariesInput: getRequiredElement("txtExportIncludeYearSummariesInput"),
               backupStatus: getRequiredElement("backupStatus"),
               entryForm: getRequiredElement("entryForm"),
               entryDate: getRequiredElement("entryDate"),
@@ -2669,6 +2754,7 @@
           els.fontSelect.addEventListener("change", onFontChange);
           els.uiWidthInput.addEventListener("change", onUiWidthChange);
           els.exportButton.addEventListener("click", exportBackup);
+          els.exportTxtButton.addEventListener("click", () => void exportPlainTextEntries());
           els.lockedImportButton.addEventListener("click", () => els.backupFileInput.click());
           els.unlockedImportButton.addEventListener("click", () => els.backupFileInput.click());
           els.backupFileInput.addEventListener("change", onBackupFileSelected);
@@ -6671,20 +6757,229 @@
                   entries: entries.sort((a, b) => a.date.localeCompare(b.date))
               };
               const json = JSON.stringify(backup, null, 2);
-              const blob = new Blob([json], { type: "application/json" });
-              const url = URL.createObjectURL(blob);
-              const anchor = document.createElement("a");
-              anchor.href = url;
-              anchor.download = `private-diary-encrypted-backup-${todayLocal()}.json`;
-              document.body.append(anchor);
-              anchor.click();
-              anchor.remove();
-              window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+              downloadTextFile(`private-diary-encrypted-backup-${todayLocal()}.json`, json, "application/json");
               setStatus(els.backupStatus, "Encrypted backup exported.", "ok");
           }
           catch (error) {
               setStatus(els.backupStatus, "Export failed: " + readableError(error), "error");
           }
+      }
+      async function exportPlainTextEntries() {
+          try {
+              if (!state.key)
+                  throw new Error("Unlock the vault before exporting TXT.");
+              setStatus(els.backupStatus, "Preparing unencrypted TXT export...", "warn");
+              const saved = await flushAutoSave();
+              if (!saved)
+                  throw new Error("The current entry could not be saved, so export was cancelled.");
+              const options = collectPlainTextExportOptions();
+              const entries = options.sort === "asc" ? sortedEntriesAsc() : sortedEntriesDesc();
+              if (!entries.length)
+                  throw new Error("No entries to export.");
+              const text = buildPlainTextExport(entries, options);
+              downloadTextFile(`private-diary-unencrypted-${options.sort}-${todayLocal()}.txt`, text, "text/plain;charset=utf-8");
+              setStatus(els.backupStatus, `Unencrypted TXT exported with ${entries.length} entr${entries.length === 1 ? "y" : "ies"}.`, "ok");
+              resetAutoLockTimer();
+          }
+          catch (error) {
+              setStatus(els.backupStatus, "TXT export failed: " + readableError(error), "error");
+          }
+      }
+      function collectPlainTextExportOptions() {
+          return {
+              sort: els.txtExportSortSelect.value === "desc" ? "desc" : "asc",
+              includeEntryAdvice: els.txtExportIncludeEntryAdviceInput.checked,
+              includeEntryCapsules: els.txtExportIncludeEntryCapsulesInput.checked,
+              includeYearSummaries: els.txtExportIncludeYearSummariesInput.checked
+          };
+      }
+      function buildPlainTextExport(entries, options) {
+          const lines = [
+              "Private Diary TXT Export",
+              `Exported: ${new Date().toISOString()}`,
+              "Format: Unencrypted plain text",
+              `Sort: ${options.sort === "asc" ? "Date ascending" : "Date descending"}`,
+              `Entries: ${entries.length}`,
+              `AI included: ${plainTextAiIncludedLabel(options)}`,
+              "",
+              "This file is not encrypted.",
+              "",
+              "=".repeat(72),
+              ""
+          ];
+          for (const entry of entries) {
+              appendPlainTextEntry(lines, entry, options);
+              lines.push("=".repeat(72), "");
+          }
+          if (options.includeYearSummaries) {
+              appendPlainTextYearSummaries(lines, options.sort);
+          }
+          return lines.join("\n").replace(/\n{4,}/g, "\n\n\n").trimEnd() + "\n";
+      }
+      function plainTextAiIncludedLabel(options) {
+          const labels = [];
+          if (options.includeEntryAdvice)
+              labels.push("entry perspectives");
+          if (options.includeEntryCapsules)
+              labels.push("entry capsules");
+          if (options.includeYearSummaries)
+              labels.push("year summaries");
+          return labels.length ? labels.join(", ") : "none";
+      }
+      function appendPlainTextEntry(lines, entry, options) {
+          const record = state.records.get(entry.date);
+          lines.push(`# ${entry.date} - ${formatDateLong(entry.date)}`);
+          lines.push(`Mood: ${entry.mood ? moodLabel(entry.mood) : "Not set"}`);
+          lines.push(`Energy: ${entry.energy}/10`);
+          lines.push(`Stress: ${entry.stress}/10`);
+          lines.push(`Themes: ${entry.themes.length ? entry.themes.join(", ") : "None"}`);
+          if (record) {
+              lines.push(`Created: ${record.createdAt}`);
+              lines.push(`Updated: ${record.updatedAt}`);
+          }
+          lines.push("");
+          appendPlainTextBlock(lines, "Journal", entry.journalText || "No journal text saved.");
+          appendPlainTextAnswers(lines, "Reflection", reflectionAnswers(entry));
+          appendPlainTextAnswers(lines, "Weekly Review", weeklyAnswers(entry));
+          appendPlainTextTopics(lines, entry.standingTopics);
+          if (options.includeEntryAdvice) {
+              appendPlainTextEntryAdvice(lines, entry);
+          }
+          if (options.includeEntryCapsules) {
+              appendPlainTextEntryCapsule(lines, entry);
+          }
+      }
+      function appendPlainTextBlock(lines, title, text) {
+          lines.push(`## ${title}`);
+          lines.push(normalizeExportText(text) || "None saved.");
+          lines.push("");
+      }
+      function appendPlainTextAnswers(lines, title, answers) {
+          lines.push(`## ${title}`);
+          if (!answers.length) {
+              lines.push("No answers saved.", "");
+              return;
+          }
+          for (const [question, answer] of answers) {
+              lines.push(question);
+              lines.push(normalizeExportText(answer));
+              lines.push("");
+          }
+      }
+      function appendPlainTextTopics(lines, topics) {
+          lines.push("## Standing Topics");
+          if (!topics.length) {
+              lines.push("No standing topics saved.", "");
+              return;
+          }
+          for (const topic of topics) {
+              const direction = topic.direction ? topicDirectionLabel(topic.direction) : "";
+              lines.push(`- ${topic.title}: ${topic.acuteness}/10${direction ? " - " + direction : ""}`);
+              if (topic.comment)
+                  lines.push(`  Comment: ${normalizeExportText(topic.comment)}`);
+              if (topic.nextStep)
+                  lines.push(`  Next: ${normalizeExportText(topic.nextStep)}`);
+          }
+          lines.push("");
+      }
+      function appendPlainTextEntryAdvice(lines, entry) {
+          const advice = state.llmEntryAdviceRuns.get(entry.date);
+          if (!advice)
+              return;
+          lines.push("## AI Entry Perspective");
+          lines.push(`Generated: ${advice.generatedAt}`);
+          lines.push(`Model: ${advice.model}`);
+          lines.push(`Language: ${advice.responseLanguage}`);
+          lines.push("");
+          lines.push(normalizeExportText(advice.rawText));
+          lines.push("");
+      }
+      function appendPlainTextEntryCapsule(lines, entry) {
+          const capsule = state.llmEntryCapsules.get(entry.date);
+          if (!capsule)
+              return;
+          lines.push("## AI Entry Capsule");
+          lines.push(`Generated: ${capsule.generatedAt}`);
+          lines.push(`Model: ${capsule.model}`);
+          lines.push(`Language: ${capsule.responseLanguage}`);
+          lines.push("");
+          appendPlainTextField(lines, "Summary", capsule.summary);
+          appendPlainTextField(lines, "Emotional Pattern", capsule.emotionalPattern);
+          appendPlainTextList(lines, "Themes", capsule.themes);
+          appendPlainTextInsightItems(lines, "Standing Topics", capsule.standingTopics);
+          appendPlainTextList(lines, "Unresolved", capsule.unresolved);
+          appendPlainTextList(lines, "Next Moves", capsule.nextActions);
+          appendPlainTextList(lines, "Questions", capsule.questions);
+      }
+      function appendPlainTextYearSummaries(lines, sort) {
+          const summaries = Array.from(state.llmYearSummaries.values())
+              .sort((a, b) => sort === "asc" ? a.year.localeCompare(b.year) : b.year.localeCompare(a.year));
+          if (!summaries.length)
+              return;
+          lines.push("# AI Year Summaries", "");
+          for (const summary of summaries) {
+              lines.push(`## ${summary.year}`);
+              lines.push(`Generated: ${summary.generatedAt}`);
+              lines.push(`Model: ${summary.model}`);
+              lines.push(`Language: ${summary.responseLanguage}`);
+              lines.push(`Entries: ${summary.entryCount}`);
+              lines.push("");
+              appendPlainTextLlmReport(lines, summary.report);
+              lines.push("-".repeat(72), "");
+          }
+      }
+      function appendPlainTextLlmReport(lines, report) {
+          appendPlainTextField(lines, "Summary", report.summary);
+          appendPlainTextInsightItems(lines, "Patterns", report.patterns);
+          appendPlainTextInsightItems(lines, "Pressure Points", report.pressurePoints);
+          appendPlainTextInsightItems(lines, "Standing Topics", report.standingTopics);
+          appendPlainTextList(lines, "Next Moves", report.nextActions);
+          appendPlainTextList(lines, "Questions", report.questions);
+      }
+      function appendPlainTextField(lines, label, value) {
+          const text = normalizeExportText(value);
+          if (!text)
+              return;
+          lines.push(`${label}:`);
+          lines.push(text);
+          lines.push("");
+      }
+      function appendPlainTextList(lines, title, values) {
+          const cleanValues = values.map(normalizeExportText).filter(Boolean);
+          if (!cleanValues.length)
+              return;
+          lines.push(`${title}:`);
+          for (const value of cleanValues)
+              lines.push(`- ${value}`);
+          lines.push("");
+      }
+      function appendPlainTextInsightItems(lines, title, items) {
+          if (!items.length)
+              return;
+          lines.push(`${title}:`);
+          for (const item of items) {
+              const titleText = normalizeExportText(item.title);
+              const detail = normalizeExportText(item.detail);
+              const evidence = item.evidence.map(normalizeExportText).filter(Boolean);
+              lines.push(`- ${titleText || "Item"}${detail ? ": " + detail : ""}`);
+              if (evidence.length)
+                  lines.push(`  Evidence: ${evidence.join(" | ")}`);
+          }
+          lines.push("");
+      }
+      function normalizeExportText(value) {
+          return typeof value === "string" ? value.replace(/\r\n/g, "\n").trim() : "";
+      }
+      function downloadTextFile(filename, text, type) {
+          const blob = new Blob([text], { type });
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = filename;
+          document.body.append(anchor);
+          anchor.click();
+          anchor.remove();
+          window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
       async function onBackupFileSelected(event) {
           if (!(event.target instanceof HTMLInputElement))
@@ -7272,6 +7567,10 @@
           els.llmPricingStatus.textContent = "Pricing loads from OpenRouter for the saved model.";
           els.topicTrendScope.textContent = "Last 30 days";
           els.topicTrendList.replaceChildren();
+          els.txtExportSortSelect.value = "asc";
+          els.txtExportIncludeEntryAdviceInput.checked = false;
+          els.txtExportIncludeEntryCapsulesInput.checked = false;
+          els.txtExportIncludeYearSummariesInput.checked = false;
           setStatus(els.backupStatus, "", "");
           setStatus(els.entryStatus, "", "");
           setStatus(els.entryAdviceStatus, "", "");
